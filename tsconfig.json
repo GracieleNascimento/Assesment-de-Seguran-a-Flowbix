@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/knowledge" },
+    { "path": "packages/report" },
+    { "path": "modules/module-grafana-security" },
+    { "path": "apps/server" },
+    { "path": "apps/cli" }
+  ]
+}

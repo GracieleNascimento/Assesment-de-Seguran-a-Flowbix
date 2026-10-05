@@ -1,0 +1,14 @@
+{
+  "nome": "Cliente Exemplo",
+  "alvos": {
+    "grafana": {
+      "url": "https://grafana.cliente.com.br",
+      "apiToken": "env:GRAFANA_TOKEN",
+      "verificarTls": true
+    }
+  },
+  "opcoes": {
+    "testarSenhaPadrao": false,
+    "maxAdmins": 3
+  }
+}

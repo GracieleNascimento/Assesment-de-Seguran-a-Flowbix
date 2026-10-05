@@ -1,0 +1,25 @@
+{
+  "name": "flowbix-assessment",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plataforma modular de assessment Flowbix (técnico + segurança) para Zabbix, Grafana, Elastic, Graylog.",
+  "workspaces": [
+    "packages/*",
+    "modules/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "dev:server": "npm run build && node apps/server/dist/index.js",
+    "start": "node apps/server/dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.5.4"
+  }
+}

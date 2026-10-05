@@ -1,0 +1,16 @@
+{
+  "name": "@flowbix/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": { "flowbix-assess": "dist/index.js" },
+  "dependencies": {
+    "@flowbix/core": "0.1.0",
+    "@flowbix/knowledge": "0.1.0",
+    "@flowbix/report": "0.1.0",
+    "@flowbix/module-grafana-security": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc --build"
+  }
+}
