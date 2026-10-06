@@ -11,8 +11,10 @@ Assim o motor, o relatório e o comitê tratam técnico e segurança como uma co
 
 ## Stack
 
-- Node.js ≥ 18, TypeScript, monorepo com workspaces do npm.
-- Servidor: Fastify (`apps/server`). CLI de testes: `apps/cli`.
+- Node.js ≥ 20.19, TypeScript, monorepo com workspaces do npm.
+- **API** (`apps/server`): Fastify 5 em arquitetura **MVC**, PostgreSQL + Prisma 7,
+  validação com Zod, autenticação JWT com perfis, documentação OpenAPI/Swagger em `/docs`.
+- CLI de testes: `apps/cli`.
 
 ## Estrutura
 
@@ -26,8 +28,9 @@ flowbix-assessment/
 ├─ modules/
 │  └─ module-grafana-security/        → módulo de SEGURANÇA do Grafana (referência)
 ├─ apps/
-│  ├─ server/      @flowbix/server    → API REST
+│  ├─ server/      @flowbix/server    → API REST (MVC) — ver "API" abaixo
 │  └─ cli/         @flowbix/cli       → runner de linha de comando
+├─ docker-compose.yml                 → Postgres de desenvolvimento
 └─ examples/ambiente.exemplo.json
 ```
 
@@ -38,9 +41,10 @@ flowbix-assessment/
 > sincronizadas/virtualizadas (OneDrive, AppData de apps da Store), onde os links do
 > `npm workspaces` podem falhar.
 
-### 1. Instalar o Node.js 18+ (uma vez)
+### 1. Instalar o Node.js 20+ e o Docker Desktop (uma vez)
 - Baixe o instalador LTS em https://nodejs.org e instale (next, next, finish), **ou**
   no Windows, via terminal: `winget install OpenJS.NodeJS.LTS`
+- Docker Desktop (para o Postgres): https://www.docker.com/products/docker-desktop
 - Feche e reabra o terminal. Confira:
   ```bash
   node --version
@@ -56,18 +60,31 @@ flowbix-assessment/
 - **Sem git:** baixe o ZIP pelo botão verde "Code → Download ZIP" no GitHub, extraia e
   abra o terminal na pasta extraída.
 
-### 3. Instalar as dependências e compilar
+### 3. Instalar, configurar e preparar o banco
 ```bash
 npm install
+copy appsserver.env.example appsserver.env   # Linux/macOS: cp
+# edite apps/server/.env: JWT_SECRET (aleatório, 32+ caracteres) e ADMIN_EMAIL/ADMIN_SENHA
+
+npm run db:up        # sobe o Postgres no Docker
+npm run db:deploy    # cria as tabelas (migrations)
+npm run db:seed      # cria o primeiro ADMIN a partir do .env
 npm run build
 ```
 
 ### 4. Rodar
-**Servidor (API + relatório):**
+**API:**
 ```bash
-npm start
+npm start            # produção (código compilado)
+npm run dev          # desenvolvimento (recarrega ao salvar)
 ```
-Abre em `http://localhost:8090`. Mude a porta com `PORT=9000 npm start`.
+Abre em `http://localhost:8090` → redireciona para a documentação interativa em `/docs`.
+Faça login em `POST /api/v1/auth/login`, copie o `token` e clique em **Authorize**.
+
+**Testes de integração** (usam o banco `flowbix_assessment_teste`, recriado a cada execução):
+```bash
+npm test
+```
 
 **Teste rápido pela linha de comando** (gera um relatório HTML de um ambiente):
 ```bash
@@ -105,12 +122,72 @@ Abra `relatorio.html` no navegador.
 - **`Cannot find module '@flowbix/...'`:** você está rodando de uma pasta virtualizada
   (OneDrive/AppData da Store). Mova o projeto para `C:\Projetos\...` e rode `npm install` de novo.
 
-## Como era antes (CLI/servidor rápido)
+## API (apps/server) — arquitetura MVC
 
-```bash
-node apps/server/dist/index.js        # http://localhost:8090
-node apps/cli/dist/index.js meu-ambiente.json relatorio.html
 ```
+apps/server/
+├─ prisma/
+│  ├─ schema.prisma        → tabelas: usuarios, ambientes, assessments, decisoes_comite
+│  ├─ migrations/          → histórico versionado do banco
+│  └─ seed.ts              → cria o primeiro ADMIN
+├─ src/
+│  ├─ server.ts            → entrada: sobe a API, desligamento gracioso
+│  ├─ app.ts               → monta o Fastify (plugins + container + rotas)
+│  ├─ container.ts         → injeção de dependências: Models → Services → Controllers
+│  ├─ config/env.ts        → variáveis de ambiente validadas (falha cedo se faltar algo)
+│  │
+│  ├─ routes/              → URL + método + middlewares + schema → controller
+│  ├─ middlewares/         → autenticar (JWT) e autorizar (perfil)
+│  ├─ validators/          → schemas Zod de ENTRADA (body, query, params)
+│  ├─ controllers/  (C)    → recebe a requisição validada, chama o service, devolve a view
+│  ├─ services/            → regras de negócio (sem HTTP, sem SQL)
+│  ├─ models/       (M)    → acesso ao banco via Prisma (único lugar com consultas)
+│  ├─ views/        (V)    → formato de SAÍDA: schema da resposta + render (JSON e HTML)
+│  │
+│  ├─ engine/              → integração com o motor: registro de módulos + executor assíncrono
+│  ├─ plugins/             → infraestrutura: erros, segurança, banco, JWT, Swagger
+│  └─ lib/                 → utilitários: erros de aplicação, senha, tipos HTTP
+└─ test/api.test.ts        → testes de integração (Postgres real + Grafana simulado)
+```
+
+Fluxo de uma requisição:
+
+```
+HTTP → route → middlewares (autenticar/autorizar) → validator (Zod)
+     → controller → service (regras) → model (Prisma) → banco
+     ← controller ← view (render + schema de resposta) ← resposta JSON/HTML
+```
+
+**Para adicionar um recurso novo:** model → service → controller → view → validator →
+arquivo em `routes/` + uma linha em `routes/index.ts` e no `container.ts`.
+
+### Endpoints (`/api/v1`)
+
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| GET | `/health`, `/health/ready` | público | liveness / readiness (banco) |
+| POST | `/auth/login` | público | login → token JWT (limite de 10/min) |
+| GET | `/auth/me` | logado | usuário atual |
+| POST | `/auth/me/senha` | logado | troca a própria senha |
+| GET/POST | `/usuarios` | ADMIN | lista / cria usuários |
+| GET/PATCH | `/usuarios/:id` | ADMIN | detalha / altera (desativar = `ativo:false`) |
+| GET | `/modulos`, `/catalogo` | logado | módulos registrados e verificações |
+| GET | `/ambientes`, `/ambientes/:id` | logado | lista / detalha ambientes |
+| POST/PATCH | `/ambientes`, `/ambientes/:id` | ADMIN, ANALISTA | cria / altera |
+| DELETE | `/ambientes/:id` | ADMIN | arquiva (mantém histórico) |
+| POST | `/ambientes/:id/assessments` | ADMIN, ANALISTA | inicia assessment (202, assíncrono) |
+| GET | `/assessments`, `/assessments/:id` | logado | lista / detalha (achados, comitê, log) |
+| GET | `/assessments/:id/relatorio` | logado | relatório HTML (`?download=true`) |
+| POST | `/assessments/:id/decisao` | ADMIN | decisão do comitê (única e imutável) |
+| GET | `/assessments/:id/decisao`, `/decisoes` | logado | decisão / trilha de evidências |
+
+Convenções: listas paginadas (`?pagina=1&porPagina=20` → `{ dados, paginacao }`), erros
+no formato `{ erro: { codigo, mensagem, detalhes? }, requestId }`, cabeçalho
+`X-Request-Id` em toda resposta, datas em ISO 8601.
+
+**Segredos:** credenciais das plataformas nunca vão para o banco. No ambiente, use
+`"apiToken": "env:GRAFANA_TOKEN"` e defina a variável no `.env` do servidor; a API
+recusa segredo em texto puro.
 
 ## O contrato de módulo (para os colegas migrarem o assessment técnico)
 
@@ -141,7 +218,7 @@ Pontos do contrato:
 - **Finding** (achado): `checkId`, `status` (`PASS|FAIL|WARN|NA|ERRO|MANUAL`), `evidencia`,
   `alvo`, `detalhes?`. O motor junta o Finding ao Check pelo `checkId` e calcula o score.
 - **Somente leitura**: módulos nunca alteram o ambiente do cliente.
-- Registre o módulo em `apps/server/src/registro.ts` (e no CLI) — nada mais muda.
+- Registre o módulo em `apps/server/src/engine/registro.ts` (e no CLI) — nada mais muda.
 
 O mapeamento do assessment técnico dos colegas para esse contrato é: cada "verificação"
 atual vira um `Check` no `catalogo()`, e o coletor atual passa a devolver `Finding[]`.
@@ -163,9 +240,11 @@ registrada (quem aprovou, quando) como evidência do repasse.
 
 ## Situação atual (scaffold)
 
-- ✅ Núcleo (contrato, motor, score, comitê), base de conhecimento, relatório, servidor, CLI.
+- ✅ Núcleo (contrato, motor, score, comitê), base de conhecimento, relatório, CLI.
+- ✅ API MVC com Postgres/Prisma, JWT + perfis, assessments assíncronos, decisões do comitê
+  persistidas, OpenAPI em `/docs` e testes de integração.
 - ✅ Módulo de referência: **Grafana — Segurança** (porta do auditor Python).
 - ⏳ A portar como módulos: Zabbix/Elastic/Graylog segurança (lógica já existe no projeto
   Python) e os módulos técnicos dos colegas (migrar para o contrato acima).
-- ⏳ UI web rica (hoje o servidor entrega JSON + relatório HTML; a UI pode consumir a API).
+- ⏳ UI web (SPA) consumindo a API.
 ```

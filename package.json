@@ -9,13 +9,20 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc --build",
+    "build": "npm run prisma:generate -w @flowbix/server && tsc --build",
     "clean": "tsc --build --clean",
-    "dev:server": "npm run build && node apps/server/dist/index.js",
-    "start": "node apps/server/dist/index.js"
+    "dev": "npm run dev -w @flowbix/server",
+    "start": "npm start -w @flowbix/server",
+    "test": "npm test -w @flowbix/server",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run db:migrate -w @flowbix/server",
+    "db:deploy": "npm run db:deploy -w @flowbix/server",
+    "db:seed": "npm run db:seed -w @flowbix/server",
+    "db:studio": "npm run db:studio -w @flowbix/server"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

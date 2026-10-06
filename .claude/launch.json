@@ -4,7 +4,9 @@
     {
       "name": "flowbix-server",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["apps/server/dist/index.js"],
+      "runtimeArgs": [
+        "apps/server/dist/server.js"
+      ],
       "port": 8090
     }
   ]

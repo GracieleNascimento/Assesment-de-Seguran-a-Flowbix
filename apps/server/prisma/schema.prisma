@@ -1,0 +1,118 @@
+// Modelo de dados da API Flowbix Assessment.
+// Alterou algo aqui? Rode `npm run db:migrate` (gera migration + client).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Perfis de acesso. ADMIN > ANALISTA > LEITURA.
+enum Perfil {
+  ADMIN
+  ANALISTA
+  LEITURA
+}
+
+enum StatusAssessment {
+  PENDENTE
+  EXECUTANDO
+  CONCLUIDO
+  ERRO
+}
+
+enum Decisao {
+  GO
+  CONDICIONAL
+  NO_GO
+}
+
+model Usuario {
+  id           String   @id @default(uuid()) @db.Uuid
+  nome         String
+  email        String   @unique
+  senhaHash    String   @map("senha_hash")
+  perfil       Perfil   @default(LEITURA)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  ambientesCriados Ambiente[]
+  assessments      Assessment[]
+  decisoes         DecisaoComite[]
+
+  @@map("usuarios")
+}
+
+/// Ambiente de um cliente: alvos por plataforma (url, credenciais como env:NOME) + opções.
+model Ambiente {
+  id           String    @id @default(uuid()) @db.Uuid
+  nome         String
+  cliente      String?
+  descricao    String?
+  alvos        Json
+  opcoes       Json      @default("{}")
+  criadoPorId  String    @map("criado_por_id") @db.Uuid
+  criadoEm     DateTime  @default(now()) @map("criado_em")
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
+  /// Arquivamento (soft delete): preserva o histórico de assessments/decisões.
+  arquivadoEm  DateTime? @map("arquivado_em")
+
+  criadoPor   Usuario      @relation(fields: [criadoPorId], references: [id])
+  assessments Assessment[]
+
+  @@index([nome])
+  @@map("ambientes")
+}
+
+model Assessment {
+  id             String           @id @default(uuid()) @db.Uuid
+  ambienteId     String           @map("ambiente_id") @db.Uuid
+  executadoPorId String           @map("executado_por_id") @db.Uuid
+  status         StatusAssessment @default(PENDENTE)
+  /// Módulos solicitados (vazio = todos os aplicáveis).
+  modulos        String[]
+  score          Float?
+  nota           String?
+  recomendacao   Decisao?
+  /// ResultadoAssessment completo (achados, resumo, módulos) do @flowbix/core.
+  resultado      Json?
+  /// ResultadoComite (critérios avaliados + recomendação).
+  comite         Json?
+  /// Log de execução do motor (inclui falhas de módulos).
+  log            String[]
+  erro           String?
+  criadoEm       DateTime         @default(now()) @map("criado_em")
+  iniciadoEm     DateTime?        @map("iniciado_em")
+  concluidoEm    DateTime?        @map("concluido_em")
+
+  ambiente     Ambiente       @relation(fields: [ambienteId], references: [id])
+  executadoPor Usuario        @relation(fields: [executadoPorId], references: [id])
+  decisao      DecisaoComite?
+
+  @@index([ambienteId, criadoEm])
+  @@index([status])
+  @@map("assessments")
+}
+
+/// Decisão humana do comitê sobre um assessment. Imutável: é a evidência do repasse.
+model DecisaoComite {
+  id            String   @id @default(uuid()) @db.Uuid
+  assessmentId  String   @unique @map("assessment_id") @db.Uuid
+  decisao       Decisao
+  /// Recomendação automática no momento da decisão (snapshot).
+  recomendacao  Decisao
+  observacao    String
+  decididoPorId String   @map("decidido_por_id") @db.Uuid
+  decididoEm    DateTime @default(now()) @map("decidido_em")
+
+  assessment  Assessment @relation(fields: [assessmentId], references: [id])
+  decididoPor Usuario    @relation(fields: [decididoPorId], references: [id])
+
+  @@map("decisoes_comite")
+}
